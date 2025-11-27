@@ -10,7 +10,7 @@ It appears in:
 - The Cooley–Tukey FFT  
 - Multiprocessor interconnect networks  
 - Efficient structured neural network layers  
-- Any algorithm with recursive "swap + combine" phases  
+- Algorithms with recursive "swap + combine" phases  
 
 For an input of width **L**, the standard dense multiplication **XW** (shape: *F×L · L×L*) can be replaced by:
 
