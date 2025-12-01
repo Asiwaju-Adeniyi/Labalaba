@@ -20,5 +20,8 @@ __global__ void naive_butterfly_xw_kernel(
     float* x_row = X + row_offset;
     float* y_row = Y + row_offset; 
 
+    extern __shared__ float buffer[];
+
+
 }
 
