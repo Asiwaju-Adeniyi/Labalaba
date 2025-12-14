@@ -1,12 +1,11 @@
 #include <cuda_runtime.h>
-#include <cmath>
 
 /*
-  One butterfly stage.
+  One butterfly stage Bi.
 
   X_in, X_out: (B, F, L)
-  W_stage:     (L, 2)  -- two weights per output position
-  stage:       which butterfly level (0 ... log2(L)-1)
+  W_stage:     (L, 2)   -- two weights per row
+  stage:       0 ... log2(L)-1
 */
 
 __global__ void butterfly_stage_kernel(
@@ -18,28 +17,35 @@ __global__ void butterfly_stage_kernel(
 ) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int total = B * F * L;
-
     if (idx >= total) return;
 
-    // Flattened index → (b, f, l)
+    // idx -> (b, f, l)
     int l = idx % L;
     int tmp = idx / L;
     int f = tmp % F;
     int b = tmp / F;
 
-    int stride = 1 << stage;               // 2^stage
-    int partner = l ^ stride;              // butterfly pairing
+    int stride  = 1 << stage;
+    int partner = l ^ stride;
 
     if (partner >= L) return;
 
-    // Read inputs
-    float x0 = X_in[b * F * L + f * L + l];
-    float x1 = X_in[b * F * L + f * L + partner];
+    // Enforce ONE thread per butterfly pair
+    if (l < partner) {
+        int base_l = b * F * L + f * L + l;
+        int base_p = b * F * L + f * L + partner;
 
-    // Two weights per output position
-    float w0 = W_stage[l * 2 + 0];
-    float w1 = W_stage[l * 2 + 1];
+        float x0 = X_in[base_l];
+        float x1 = X_in[base_p];
 
-    // Butterfly combine
-    X_out[b * F * L + f * L + l] = w0 * x0 + w1 * x1;
+        // Load full 2×2 butterfly weights
+        float a = W_stage[l * 2 + 0];
+        float b0 = W_stage[l * 2 + 1];
+        float c = W_stage[partner * 2 + 0];
+        float d = W_stage[partner * 2 + 1];
+
+        // Apply butterfly transform
+        X_out[base_l] = a * x0 + b0 * x1;
+        X_out[base_p] = c * x0 + d * x1;
+    }
 }
