@@ -1,37 +1,45 @@
-#include <cstdio>
-#include <cstdlib>
-#include <cublas_v2.h>
 #include <cuda_runtime.h>
-#include <iostream>
+#include <cmath>
 
-__global__ void butterfly_factor_kernel(
-    const float* X,
-    const float* B,
-    float* Y,
-    int K, int a, int b, int c, int d)
-{
-    int i = blockIdx.x;
-    int j = blockIdx.y;
+/*
+  One butterfly stage.
 
-    int col_base = (i * (c * d)) + j;
+  X_in, X_out: (B, F, L)
+  W_stage:     (L, 2)  -- two weights per output position
+  stage:       which butterfly level (0 ... log2(L)-1)
+*/
 
-    int row_base = (i * (b * d)) + j;
+__global__ void butterfly_stage_kernel(
+    const float* X_in,
+    float* X_out,
+    const float* W_stage,
+    int B, int F, int L,
+    int stage
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int total = B * F * L;
 
-    int ℓ = threadIdx.x;
-    if (ℓ >= c) return;
+    if (idx >= total) return;
 
-    int col = col_base + ℓ * d;
+    // Flattened index → (b, f, l)
+    int l = idx % L;
+    int tmp = idx / L;
+    int f = tmp % F;
+    int b = tmp / F;
 
-    for (int k = 0; k < b; k++) {
-        int row = row_base + k * d;
+    int stride = 1 << stage;               // 2^stage
+    int partner = l ^ stride;              // butterfly pairing
 
-        float weight = B[col * (b*d) + row];
+    if (partner >= L) return;
 
-        for (int r = 0; r < K; r++) {
-            int in_idx  = r * (c*d*a) + col;
-            int out_idx = r * (b*d*a) + row;
-            Y[out_idx] += X[in_idx] * weight;
-        }
-    }
+    // Read inputs
+    float x0 = X_in[b * F * L + f * L + l];
+    float x1 = X_in[b * F * L + f * L + partner];
+
+    // Two weights per output position
+    float w0 = W_stage[l * 2 + 0];
+    float w1 = W_stage[l * 2 + 1];
+
+    // Butterfly combine
+    X_out[b * F * L + f * L + l] = w0 * x0 + w1 * x1;
 }
-
